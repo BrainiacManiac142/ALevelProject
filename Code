@@ -1,1 +1,55 @@
+def perlinPixel(neighbours : tuple):
+    #structure of neighbours: [x position, y position][x magnitude, y magnitude]
+    #for each point, generate a vector between the XY position of the centre of the pixel and the origin of the vector
+    #dot product each set of 2 vectors
+    #interpolate/average
+    #return value between 0 and 1
+    pass
 
+
+def perlinVector(pointCoords, seed : int):
+    #loop through every coordinate
+
+    #generate polar coordinates
+    #convert to cartesian
+
+    #structure of vector: [x position, y position][x magnitude, y magnitude]
+
+    pass
+
+def pointGeneration(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed : int, padding : bool):
+    #find X span
+    #find Y span
+
+    #generate X points
+    #duplicate Y times
+
+    #check if randomness is 0
+
+    #iterate through every coordinate and randomise XY
+
+    return pointCoords
+
+def perlinNoise(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, padding, seed : int):
+
+    pointCoords = pointGeneration(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed, padding)
+    #structure [x position, y position]
+    pointVectors = perlinVector(pointCoords, seed)
+    #structure [x position, y position][x magnitude, y magnitude]
+
+    bitmap = perlinPixel()
+
+    return bitmap
+
+randomisation = 0 #GUI slider between 0 and 1
+minX = -1
+maxX = 1
+minY = -1
+maxY = 1
+spacingX = 1 #GUI slider between 0 and 5
+spacingY = 1 #gui slider between 0 and 5
+seed = 0 #text box that only accepts numbers - possibility of adding hash functionality
+padding = 1 #boolean tick box on if an extra set of points is needed around the outside
+#option of adding a black level and a white level
+
+perlinNoise(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed, padding)
