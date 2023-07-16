@@ -1,3 +1,7 @@
+dimport numpy as np
+import matplotlib.pyplot as plt
+import math
+
 def perlinPixel(neighbours : tuple):
     #structure of neighbours: [x position, y position][x magnitude, y magnitude]
     #for each point, generate a vector between the XY position of the centre of the pixel and the origin of the vector
@@ -7,49 +11,100 @@ def perlinPixel(neighbours : tuple):
     pass
 
 
-def perlinVector(pointCoords, seed : int):
-    #loop through every coordinate
+def pointVector(xCount : int, yCount : int, seed : int):
+    pointVectors = np.zeros((xCount,yCount,2), dtype=float) 
+    #initialise the list
 
-    #generate polar coordinates
-    #convert to cartesian
+    rng = np.random.default_rng(seed)
+    #seed the random function
 
-    #structure of vector: [x position, y position][x magnitude, y magnitude]
+    for x in range(xCount):
+        for y in range(yCount):
+            angle = rng.random() * 2 * math.pi 
+            #generate a value between 0 and 2pi radians
 
-    pass
+            pointVectors[x,y] = [math.sin(angle), math.cos(angle)]
+            #convert to cartesian and assign
 
-def pointGeneration(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed : int, padding : bool):
-    #find X span
-    #find Y span
+    #return list of cartesian magnitudes [x magnitude, y magnitude]
+    return pointVectors
 
-    #generate X points
-    #duplicate Y times
+def pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount : int, yCount : int, seed : int):
+    xSpan = maxX - minX
+    ySpan = maxY - minY
+    #find X and Y span
 
-    #check if randomness is 0
+    spacingX = xSpan / xCount
+    spacingY = ySpan / yCount
+
+    pointCoords = np.zeros((xCount,yCount,2), dtype=float) 
+    #initialise the list
+
+    for x in range(xCount):
+        for y in range(yCount):
+            pointCoords[x,y] = [(x * spacingX) + minX , (y * spacingY) + minY]
+    #generate X points and duplicate Y times
+    
+    if gridRandomisation == 0:
+        return pointCoords
+
+    rng = np.random.default_rng(seed) # seed the random fucntion
+    
+    #randomise points
+    for x in range(xCount):
+        for y in range(yCount):
+            pointCoords[x,y,0] += ((rng.random() * 2) - 1) * gridRandomisation * spacingX 
+            pointCoords[x,y,1] += ((rng.random() * 2) - 1) * gridRandomisation * spacingY 
+            #multiplying by 2 and subtracting 1 increases the span of the float generator from 0-1 to -1 - 1 
 
     #iterate through every coordinate and randomise XY
 
     return pointCoords
 
-def perlinNoise(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, padding, seed : int):
+def perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed : int):
 
-    pointCoords = pointGeneration(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed, padding)
+    pointCoords = pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
     #structure [x position, y position]
-    pointVectors = perlinVector(pointCoords, seed)
-    #structure [x position, y position][x magnitude, y magnitude]
+    pointVectors = pointVector(xCount, yCount, seed)
+    #structure [x magnitude, y magnitude]
+
+
 
     bitmap = perlinPixel()
 
     return bitmap
 
-randomisation = 0 #GUI slider between 0 and 1
-minX = -1
-maxX = 1
-minY = -1
-maxY = 1
-spacingX = 1 #GUI slider between 0 and 5
-spacingY = 1 #gui slider between 0 and 5
-seed = 0 #text box that only accepts numbers - possibility of adding hash functionality
-padding = 1 #boolean tick box on if an extra set of points is needed around the outside
+gridRandomisation = 1 #GUI slider between 0 and 1
+minX = -5
+maxX = 5
+minY = -5
+maxY = 5
+xCount = 25 #integer gui slider between 1 and 1000
+yCount = 25 #integer gui slider between 1 and 1000
+seed = 0 #integer text box - possibility of adding hash functionality
 #option of adding a black level and a white level
 
-perlinNoise(randomisation, minX, maxX, minY, maxY, spacingX, spacingY, seed, padding)
+#perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
+
+
+pointCoords = pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
+pointVectors = pointVector(xCount, yCount, seed)
+
+xcoords = []
+ycoords = []
+xMags = []
+yMags = []
+
+for x in range(pointCoords.shape[0]):
+    for y in range(pointCoords.shape[1]):
+        xcoords.append(pointCoords[x,y,0])
+        ycoords.append(pointCoords[x,y,1])
+        xMags.append(pointVectors[x,y,0])
+        yMags.append(pointVectors[x,y,1])
+
+
+#print("xvalues", array[0], "\n", "yvalues", array[1] )
+
+#plt.scatter(xcoords,ycoords)
+plt.quiver(xcoords,ycoords, xMags, yMags)
+plt.show()
