@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+from time import perf_counter
 
 def perlinPixel(neighbours : tuple):
     #structure of neighbours: [x position, y position][x magnitude, y magnitude]
@@ -79,16 +80,20 @@ minX = -5
 maxX = 5
 minY = -5
 maxY = 5
-xCount = 25 #integer gui slider between 1 and 1000
-yCount = 25 #integer gui slider between 1 and 1000
+xCount = 75 #integer gui slider between 1 and 200
+yCount = 75 #integer gui slider between 1 and 200
 seed = 0 #integer text box - possibility of adding hash functionality
 #option of adding a black level and a white level
 
 #perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
 
-
+t1 = perf_counter()
 pointCoords = pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
+t2 = perf_counter()
 pointVectors = pointVector(xCount, yCount, seed)
+t3 = perf_counter()
+print((t2-t1),"s")
+print((t3-t2),"s")
 
 xcoords = []
 ycoords = []
@@ -105,6 +110,6 @@ for x in range(pointCoords.shape[0]):
 
 #print("xvalues", array[0], "\n", "yvalues", array[1] )
 
-#plt.scatter(xcoords,ycoords)
+#plt.scatter(xcoords,ycoords)``
 plt.quiver(xcoords,ycoords, xMags, yMags)
 plt.show()
