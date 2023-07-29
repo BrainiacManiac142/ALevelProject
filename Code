@@ -3,47 +3,24 @@ import matplotlib.pyplot as plt
 import math
 from time import perf_counter
 
-def perlinPixel(neighbours : tuple):
-    #structure of neighbours: [x position, y position][x magnitude, y magnitude]
+def perlinPixel(xPixel, yPixel, nearestPoints):
+    #structure of neighbours: [x position, y position],[x magnitude, y magnitude]
     #for each point, generate a vector between the XY position of the centre of the pixel and the origin of the vector
     #dot product each set of 2 vectors
     #interpolate/average
-    #return value between 0 and 1
-    pass
+    return #value between 0 and 1
 
 
-def pointVector(xCount : int, yCount : int, seed : int):
-    pointVectors = np.zeros((xCount,yCount,2), dtype=float) 
-    #initialise the list
-
-    rng = np.random.default_rng(seed)
-    #seed the random function
-
-    for x in range(xCount):
-        for y in range(yCount):
-            angle = rng.random() * 2 * math.pi 
-            #generate a value between 0 and 2pi radians
-
-            pointVectors[x,y] = [math.sin(angle), math.cos(angle)]
-            #convert to cartesian and assign
-
-    #return list of cartesian magnitudes [x magnitude, y magnitude]
-    return pointVectors
-
-def pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount : int, yCount : int, seed : int):
-    xSpan = maxX - minX
-    ySpan = maxY - minY
-    #find X and Y span
-
-    spacingX = xSpan / xCount
-    spacingY = ySpan / yCount
+def pointGeneration(gridRandomisation, xCount : int, yCount : int, seed : int):
+    spacingX = 1 / xCount
+    spacingY = 1 / yCount
 
     pointCoords = np.zeros((xCount,yCount,2), dtype=float) 
     #initialise the list
 
     for x in range(xCount):
         for y in range(yCount):
-            pointCoords[x,y] = [(x * spacingX) + minX , (y * spacingY) + minY]
+            pointCoords[x,y] = [(x * spacingX), (1 - (y * spacingY))]
     #generate X points and duplicate Y times
     
     if gridRandomisation == 0:
@@ -62,33 +39,99 @@ def pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount : int, yCo
 
     return pointCoords
 
-def perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed : int):
+
+def vectorGeneration(xCount : int, yCount : int, seed : int):
+    pointVectors = np.zeros((xCount,yCount,2), dtype=float) 
+    #initialise the list
+
+    rng = np.random.default_rng(seed)
+    #seed the random function
+
+    for x in range(xCount):
+        for y in range(yCount):
+            angle = rng.random() * 2 * math.pi 
+            #generate a value between 0 and 2pi radians
+
+            pointVectors[x,y] = [math.sin(angle), math.cos(angle)]
+            #convert to cartesian and assign
+
+    #return list of cartesian magnitudes [x magnitude, y magnitude]
+    return pointVectors
+
+def nearestPoints(xPixel : int, yPixel : int, pointCoords, xCount : int, yCount : int, resolution, pointVectors):
+    #nearestPoints uses the 0-1 coordinate system
+    xPosition = xPixel/ resolution
+    yPosition = yPixel / resolution
+    #divide to turn pixel coordinate to grid coordinate
+
+    spacingX = 1 / xCount
+    spacingY = 1 / yCount
+
+    gridX = xPosition // spacingX
+    gridY = yPosition // spacingY
+    #find which box the pixel is in
+    
+    pointDistance = []
+
+    for x in range(-1 , 2):
+        for y in range(-1, 2):
+            try:
+                point = pointCoords[(gridX + x), (gridY + y)]
+                vector = pointVectors[(gridX + x), (gridY + y)]
+
+                xDistance = (point[0] - xPosition)
+                yDistance = (point[1] - yPosition)
+
+                totalDistance = (xDistance * xDistance) + (yDistance * yDistance )#no need to square root it as the distance is comparative
+
+                pointDistance.append([totalDistance, point, vector])
+            except:
+                pass
+    
+    pointDistance.sort()
+    pointPositions = []
+    for n in pointDistance:
+        pointPositions.append(pointDistance[n, 1:]) #remove the distance
+
+    return pointPositions #returns a list of coordinates between 4 and 9 values in order of distance
+    
+
+
+def perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed : int, resolution : int):
 
     pointCoords = pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
     #structure [x position, y position]
-    pointVectors = pointVector(xCount, yCount, seed)
+    pointVectors = vectorGeneration(xCount, yCount, seed)
     #structure [x magnitude, y magnitude]
 
+    bitmap = np.zeros((resolution,resolution), dtype = float)
 
+    for xPixel in range(resolution):
+        for yPixel in range(resolution):
+            nearestPoints = nearestPoints(xPixel, yPixel, pointCoords, xCount, yCount, resolution, pointVectors)
+            #find nearest points
 
-    bitmap = perlinPixel()
+            value = perlinPixel(xPixel, yPixel, nearestPoints)
+            #run perlin noise
+
+            bitmap[xPixel, yPixel] = value
 
     return bitmap
 
-gridRandomisation = 1 #GUI slider between 0 and 1
-minX = -5
-maxX = 5
-minY = -5
-maxY = 5
-xCount = 75 #integer gui slider between 1 and 200
-yCount = 75 #integer gui slider between 1 and 200
+
+
+
+gridRandomisation = 0 #GUI slider between 0 and 1
+xCount = 20 #integer gui slider between 1 and 200
+yCount = 20 #integer gui slider between 1 and 200
 seed = 0 #integer text box - possibility of adding hash functionality
+resolution = 1080 #integer for image width and height
 #option of adding a black level and a white level
 
-#perlinNoise(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
+#perlinNoise(gridRandomisation, xCount, yCount, seed)
 
 t1 = perf_counter()
-pointCoords = pointGeneration(gridRandomisation, minX, maxX, minY, maxY, xCount, yCount, seed)
+pointCoords = pointGeneration(gridRandomisation, xCount, yCount, seed)
 t2 = perf_counter()
 pointVectors = pointVector(xCount, yCount, seed)
 t3 = perf_counter()
@@ -110,6 +153,6 @@ for x in range(pointCoords.shape[0]):
 
 #print("xvalues", array[0], "\n", "yvalues", array[1] )
 
-#plt.scatter(xcoords,ycoords)``
-plt.quiver(xcoords,ycoords, xMags, yMags)
+plt.scatter(xcoords,ycoords)
+#plt.quiver(xcoords,ycoords, xMags, yMags)
 plt.show()
