@@ -6,7 +6,7 @@ from PIL import Image
 
 def lerp(a : float, b : float, c : float):
     assert c >= 0 and c <= 1
-    return (b - a) * c + a
+    return float((b - a) * c + a)
 
 def smooth(v):
     assert v >= 0 and v <= 1
@@ -14,58 +14,7 @@ def smooth(v):
     assert outputValue <= 1 and outputValue >= 0
     return outputValue
 
-def perlinPixel(xPixel, yPixel, pointPositions, pixelPosition):
-    #perlinpixel uses the pixel based coordinate system
-    #structure of pointPositions: [x position, y position],[x magnitude, y magnitude]
-    #order: [bottomLeft, topLeft, bottomRight, topRight]
-    #structure of pixelPosition [x position within square, y position within square]
-
-    pointsEvaluated = 4
-    listDotProducts = []
-
-    for pointNumber in range(pointsEvaluated):
-        #pointX = pointPositions[pointNumber][0][0] * resolution + 0.5
-        #pointY = pointPositions[pointNumber][0][1] * resolution + 0.5
-        pointVectorX = pointPositions[pointNumber][1][0]
-        pointVectorY = pointPositions[pointNumber][1][1]
-        #find the point and vector associated with the corner
-
-        distanceToLeft = pixelPosition[0]
-        distanceToRight = distanceToLeft - 1.0
-        distanceToBottom = pixelPosition[1]
-        distanceToTop = distanceToBottom - 1.0
-
-        if pointNumber == 0: #bottomLeft
-            secondaryVectorX = distanceToLeft
-            secondaryVectorY = distanceToBottom
-        elif pointNumber == 1: #topLeft
-            secondaryVectorX = distanceToLeft
-            secondaryVectorY = distanceToTop
-        elif pointNumber == 2: #bottomRight
-            secondaryVectorX = distanceToRight
-            secondaryVectorY = distanceToBottom
-        elif pointNumber == 3: #topRight
-            secondaryVectorX = distanceToRight
-            secondaryVectorY = distanceToTop
-        
-        #generate secondary vector magnitudes by finding difference between pixel and point, then scale to be maximum length of root 2
-
-        xDotProduct = pointVectorX * secondaryVectorX
-        yDotProduct = pointVectorY * secondaryVectorY 
-        totalDotProduct = xDotProduct + yDotProduct
-        listDotProducts.append(totalDotProduct)
-    
-    vBottom = lerp(listDotProducts[0], listDotProducts[2], smooth(distanceToLeft))
-    vTop = lerp(listDotProducts[1], listDotProducts[3], smooth(distanceToLeft))
-
-    finalValue = lerp(vBottom, vTop , smooth(distanceToBottom))
-
-    #print(finalValue)
-    #assert finalValue >= 0.0 and finalValue <= 1.0
-
-    return finalValue + 0.5
-    #value between 0 and 1
-
+"""
 def pointGeneration(xCount : int, yCount : int):
     spacingX = 1 / (xCount - 1)
     spacingY = 1 / (yCount - 1)
@@ -79,6 +28,7 @@ def pointGeneration(xCount : int, yCount : int):
     #generate X points and duplicate Y times
     
     return pointCoords
+"""
 
 def vectorGeneration(xCount : int, yCount : int, seed : int):
     pointVectors = np.zeros((xCount,yCount,2), dtype=float) 
@@ -105,8 +55,7 @@ def vectorGeneration(xCount : int, yCount : int, seed : int):
     #return list of cartesian magnitudes [x magnitude, y magnitude]
     return pointVectors
 
-def pointInfo(xPixel : int, yPixel : int, pointCoords, xCount : int, yCount : int, resolution, pointVectors):
-    #nearestPoints uses the 0-1 coordinate system
+def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution, pointVectors):
     xPosition = (xPixel + 0.5)/ resolution
     yPosition = (yPixel + 0.5)/ resolution
     #divide to turn pixel coordinate to grid coordinate
@@ -120,26 +69,68 @@ def pointInfo(xPixel : int, yPixel : int, pointCoords, xCount : int, yCount : in
     gridY = int(yPosition // spacingY)
     #find which box the pixel is in
 
-    xPos = (xPosition / spacingX) % 1
-    yPos = (yPosition / spacingY) % 1
+    distanceToLeft = (xPosition / spacingX) % 1
+    distanceToBottom  = (yPosition / spacingY) % 1
+    #find where within the box the pixel is
+
+    distanceToRight = distanceToLeft - 1.0
+    distanceToTop = distanceToBottom - 1.0
+    #derive other 2 distances
 
     assert gridX <= xCount
     assert gridY <= yCount
 
-    #print(gridX,"\n", gridY)
+    #perlinpixel uses the pixel based coordinate system
+    #structure of pointPositions: [x position, y position],[x magnitude, y magnitude]
+    #structure of pixelPosition [x position within square, y position within square]
 
-    bottomLeft = [pointCoords[gridX][gridY], pointVectors[gridX][gridY]]
-    topLeft = [pointCoords[gridX][gridY + 1], pointVectors[gridX][gridY + 1]]
-    bottomRight = [pointCoords[gridX + 1][gridY], pointVectors[gridX + 1][gridY]]
-    topRight = [pointCoords[gridX + 1][gridY + 1], pointVectors[gridX + 1][gridY + 1]]
-    #find the points and vectors associated with the grid intersections
+    #BottomLeft
+    pointVectorX = pointVectors[gridX][gridY][0]
+    pointVectorY = pointVectors[gridX][gridY][1]
+    secondaryVectorX = distanceToLeft
+    secondaryVectorY = distanceToBottom
+    bottomLeftDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
 
-    return [bottomLeft, topLeft, bottomRight, topRight], [xPos, yPos] 
-    #returns a list of vectors, [xpos,ypos],[xmag,ymag]
+    #topleft
+    pointVectorX = pointVectors[gridX][gridY + 1][0]
+    pointVectorY = pointVectors[gridX][gridY + 1][1]
+    secondaryVectorX = distanceToLeft
+    secondaryVectorY = distanceToTop
+    topLeftDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+    
+    #bottomRight
+    pointVectorX = pointVectors[gridX + 1][gridY][0]
+    pointVectorY = pointVectors[gridX + 1][gridY][1]
+    secondaryVectorX = distanceToRight
+    secondaryVectorY = distanceToBottom
+    bottomRightDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+
+    #topRight
+    pointVectorX = pointVectors[gridX + 1][gridY + 1][0]
+    pointVectorY = pointVectors[gridX + 1][gridY + 1][1]
+    secondaryVectorX = distanceToRight
+    secondaryVectorY = distanceToTop
+    topRightDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+    
+    lerpBottom = lerp(bottomLeftDotProduct, bottomRightDotProduct, smooth(distanceToLeft))
+    lerpTop = lerp(topLeftDotProduct, topRightDotProduct, smooth(distanceToLeft))
+
+    finalValue = lerp(lerpBottom, lerpTop , smooth(distanceToBottom)) 
+    finalValue += 0.5
+    if finalValue > 1:
+        return 1
+    elif finalValue < 0:
+        return 0
+
+    #print(finalValue)
+    #assert finalValue >= 0.0 and finalValue <= 1.0
+
+    return finalValue
+    #value between 0 and 1
 
 def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
 
-    pointCoords = pointGeneration(xCount, yCount)
+    #pointCoords = pointGeneration(xCount, yCount)
     #structure [x position, y position]
     pointVectors = vectorGeneration(xCount, yCount, seed)
     #structure [x magnitude, y magnitude]
@@ -153,10 +144,8 @@ def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
             
             #print(f"Pixel: ({xPixel},{yPixel})") #debug print
 
-            pointPositions, pixelPosition = pointInfo(xPixel, yPixel, pointCoords, xCount, yCount, resolution, pointVectors)
-            #find nearest points
+            value = pixelCalc(xPixel, yPixel, xCount, yCount, resolution, pointVectors)
 
-            value = perlinPixel(xPixel, yPixel, pointPositions, pixelPosition)
             #run perlin noise
             #print(f"Value of pixel: {value}") #debug print
 
@@ -164,19 +153,22 @@ def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
     print(f"Max: {bitmap.max()}\nMin: {bitmap.min()}")
     return bitmap
 
-
+startTime = perf_counter()
 #gridRandomisation = 0 #GUI slider between 0 and 1
 xCount = 11 #integer gui slider between 1 and 200
 yCount = 11 #integer gui slider between 1 and 200
-seed = 0 #integer text box - possibility of adding hash functionality
+seed = 1 #integer text box - possibility of adding hash functionality
 resolution = 1000 #integer for image width and height
 #option of adding a black level and a white level
 
 bitmap = perlinNoise(xCount, yCount, seed, resolution)
+perlinDone = perf_counter()
 #print("done perlin")
 renderedImage = Image.new('L', (resolution,resolution))
 #L for greyscale, RGB for RGB, HSV for HSV   
-    
+
+allValues = []
+
 for xIterations in range(resolution):
     for yIterations in range(resolution):        
         try:
@@ -184,12 +176,23 @@ for xIterations in range(resolution):
             assert pixelValue >= 0 and pixelValue <= 255
         except:
             pixelValue = 0
+        allValues.append(pixelValue)
         renderedImage.putpixel((xIterations,yIterations),pixelValue)
-    
-renderedImage.save("Perlin44.png")
+
+imageRearranging = perf_counter()
+renderedImage.save("Perlin53.png")
 print("done!")
+final = perf_counter()
+
+print(f"Perlin: {round(perlinDone - startTime, 3)}s \nPixel Placing: {round(imageRearranging- perlinDone, 3)}s \nImage Saving: {round(final - imageRearranging, 3)}s \nTotal: {round(final- startTime, 3)}s")
 
 """
+plt.hist(allValues, bins=np.arange(0, 255))
+plt.show()
+print("done2")
+
+
+
 #t1 = perf_counter()
 pointCoords = pointGeneration(xCount, yCount)
 #t2 = perf_counter()
