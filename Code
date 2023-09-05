@@ -2,33 +2,37 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from time import perf_counter
-from PIL import Image
+from numba import cuda
+from PyQt5.QtGui import QPixmap, QImage, qRgb
+from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel
 
+
+import os
+os.environ['NUMBAPRO_LIBDEVICE'] = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\nvvm\libdevice"
+os.environ['NUMBAPRO_NVVM'] = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\nvvm\bin\nvvm64_40_0.dll"
+
+@cuda.jit
 def lerp(a : float, b : float, c : float):
-    assert c >= 0 and c <= 1
+    #assert c >= 0 and c <= 1
     return float((b - a) * c + a)
 
+@cuda.jit
 def smooth(v):
-    assert v >= 0 and v <= 1
+    #assert v >= 0 and v <= 1
     outputValue = v * v * v * (6 * v * v - 15 * v + 10 )
-    assert outputValue <= 1 and outputValue >= 0
+    #assert outputValue <= 1 and outputValue >= 0
     return outputValue
 
-"""
-def pointGeneration(xCount : int, yCount : int):
-    spacingX = 1 / (xCount - 1)
-    spacingY = 1 / (yCount - 1)
+def rescale(bitmap):
+    maxValue = bitmap.max()
+    minValue = bitmap.min()
+    #Find the lowest and highest pixel values
 
-    pointCoords = np.zeros((xCount,yCount,2), dtype=float) 
-    #initialise the list
+    valueRange = maxValue - minValue
+    rescaledBitmap = (bitmap - minValue) * (1/valueRange)
+    #compress or expand it so every pixel lies between 0 and 1
 
-    for x in range(xCount):
-        for y in range(yCount):
-            pointCoords[x,y] = [(x * spacingX), (y * spacingY)]
-    #generate X points and duplicate Y times
-    
-    return pointCoords
-"""
+    return rescaledBitmap
 
 def vectorGeneration(xCount : int, yCount : int, seed : int):
     pointVectors = np.zeros((xCount,yCount,2), dtype=float) 
@@ -56,11 +60,13 @@ def vectorGeneration(xCount : int, yCount : int, seed : int):
     return pointVectors
 
 def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution, pointVectors):
+
     xPosition = (xPixel + 0.5)/ resolution
     yPosition = (yPixel + 0.5)/ resolution
     #divide to turn pixel coordinate to grid coordinate
-    assert xPosition <= 1 and xPosition >= 0
-    assert yPosition <= 1 and yPosition >= 0
+
+    #assert xPosition <= 1 and xPosition >= 0
+    #assert yPosition <= 1 and yPosition >= 0
 
     spacingX = 1 / (xCount - 1)
     spacingY = 1 / (yCount - 1)
@@ -77,8 +83,8 @@ def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution
     distanceToTop = distanceToBottom - 1.0
     #derive other 2 distances
 
-    assert gridX <= xCount
-    assert gridY <= yCount
+    #assert gridX <= xCount
+    #assert gridY <= yCount
 
     #perlinpixel uses the pixel based coordinate system
     #structure of pointPositions: [x position, y position],[x magnitude, y magnitude]
@@ -114,22 +120,82 @@ def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution
     
     lerpBottom = lerp(bottomLeftDotProduct, bottomRightDotProduct, smooth(distanceToLeft))
     lerpTop = lerp(topLeftDotProduct, topRightDotProduct, smooth(distanceToLeft))
-
     finalValue = lerp(lerpBottom, lerpTop , smooth(distanceToBottom)) 
-    finalValue += 0.5
-    if finalValue > 1:
-        return 1
-    elif finalValue < 0:
-        return 0
-
-    #print(finalValue)
-    #assert finalValue >= 0.0 and finalValue <= 1.0
+    #bilinear interpolation within the grid cell
 
     return finalValue
-    #value between 0 and 1
+
+@cuda.jit
+def GPUpixel(xCount, yCount, resolution, pointVectors, bitmap):
+    xPixel, yPixel = cuda.grid(2)
+    #returns the x and y 
+    if xPixel < resolution and yPixel < resolution:
+        xPosition = (xPixel + 0.5)/ resolution
+        yPosition = (yPixel + 0.5)/ resolution
+        #divide to turn pixel coordinate to grid coordinate
+
+        #assert xPosition <= 1 and xPosition >= 0
+        #assert yPosition <= 1 and yPosition >= 0
+
+        spacingX = 1 / (xCount - 1)
+        spacingY = 1 / (yCount - 1)
+
+        gridX = int(xPosition // spacingX)
+        gridY = int(yPosition // spacingY)
+        #find which box the pixel is in
+
+        distanceToLeft = (xPosition / spacingX) % 1
+        distanceToBottom  = (yPosition / spacingY) % 1
+        #find where within the box the pixel is
+
+        distanceToRight = distanceToLeft - 1.0
+        distanceToTop = distanceToBottom - 1.0
+        #derive other 2 distances
+
+        #assert gridX <= xCount
+        #assert gridY <= yCount
+
+        #perlinpixel uses the pixel based coordinate system
+        #structure of pointPositions: [x position, y position],[x magnitude, y magnitude]
+        #structure of pixelPosition [x position within square, y position within square]
+
+        #BottomLeft
+        pointVectorX = pointVectors[gridX][gridY][0]
+        pointVectorY = pointVectors[gridX][gridY][1]
+        secondaryVectorX = distanceToLeft
+        secondaryVectorY = distanceToBottom
+        bottomLeftDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+
+        #topleft
+        pointVectorX = pointVectors[gridX][gridY + 1][0]
+        pointVectorY = pointVectors[gridX][gridY + 1][1]
+        secondaryVectorX = distanceToLeft
+        secondaryVectorY = distanceToTop
+        topLeftDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+        
+        #bottomRight
+        pointVectorX = pointVectors[gridX + 1][gridY][0]
+        pointVectorY = pointVectors[gridX + 1][gridY][1]
+        secondaryVectorX = distanceToRight
+        secondaryVectorY = distanceToBottom
+        bottomRightDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+
+        #topRight
+        pointVectorX = pointVectors[gridX + 1][gridY + 1][0]
+        pointVectorY = pointVectors[gridX + 1][gridY + 1][1]
+        secondaryVectorX = distanceToRight
+        secondaryVectorY = distanceToTop
+        topRightDotProduct = ((pointVectorX * secondaryVectorX) + (pointVectorY * secondaryVectorY))
+        
+        lerpBottom = lerp(bottomLeftDotProduct, bottomRightDotProduct, smooth(distanceToLeft))
+        lerpTop = lerp(topLeftDotProduct, topRightDotProduct, smooth(distanceToLeft))
+        finalValue = lerp(lerpBottom, lerpTop , smooth(distanceToBottom)) 
+        #bilinear interpolation within the grid cell
+
+        bitmap[xPixel, yPixel] = finalValue
+
 
 def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
-
     #pointCoords = pointGeneration(xCount, yCount)
     #structure [x position, y position]
     pointVectors = vectorGeneration(xCount, yCount, seed)
@@ -137,86 +203,76 @@ def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
     #print("done 1!")
     bitmap = np.zeros((resolution,resolution), dtype = float)
 
-    for xPixel in range(resolution):
-        if xPixel % 100 == 0:
-            print(xPixel)
-        for yPixel in range(resolution):
-            
-            #print(f"Pixel: ({xPixel},{yPixel})") #debug print
+    CPU = False
 
-            value = pixelCalc(xPixel, yPixel, xCount, yCount, resolution, pointVectors)
+    if CPU == True:
+        for xPixel in range(resolution):
+            if xPixel % 100 == 0:
+                print(xPixel)
+            for yPixel in range(resolution):
+                
+                #print(f"Pixel: ({xPixel},{yPixel})") #debug print
 
-            #run perlin noise
-            #print(f"Value of pixel: {value}") #debug print
+                value = pixelCalc(xPixel, yPixel, xCount, yCount, resolution, pointVectors)
 
-            bitmap[xPixel, yPixel] = value
-    print(f"Max: {bitmap.max()}\nMin: {bitmap.min()}")
-    return bitmap
+                #run perlin noise
+                #print(f"Value of pixel: {value}") #debug print
+
+                bitmap[xPixel, yPixel] = value
+    else:
+        devicePointVectors = cuda.to_device(pointVectors)
+        deviceBitmap = cuda.to_device(bitmap)
+        blockWidth = 16
+        blockCount = int(resolution/blockWidth) + 1
+
+        GPUpixel[(blockCount, blockCount), (blockWidth, blockWidth)](xCount, yCount, resolution, devicePointVectors, deviceBitmap)
+        cuda.synchronize()
+        #wait until the previous function has finished
+
+        #pointVectors = devicePointVectors.copy_to_host()
+        bitmap = deviceBitmap.copy_to_host()
+        #retrieve the gata from the device
+
+    #print(f"Max: {bitmap.max()}\nMin: {bitmap.min()}")
+
+    rescaledBitmap = rescale(bitmap)
+
+    return rescaledBitmap
+
+
+def output(bitmap, resolution):
+    t1 = perf_counter()
+    rgbMap = np.uint8(bitmap * 255)
+    t2 = perf_counter()
+    qImg = QImage( rgbMap.data, resolution, resolution, QImage.Format_Grayscale8)
+    t3 = perf_counter()
+    #Format_RGB32
+    #Grayscale16
+    qImg.save("Perlin65.png")
+    t4 = perf_counter()
+
+    print(f"1: {round(t2 - t1, 3)}s \n2: {round(t3 - t2, 3)}s \n3: {round(t4 - t3, 3)}s")
+
+
+
 
 startTime = perf_counter()
-#gridRandomisation = 0 #GUI slider between 0 and 1
-xCount = 11 #integer gui slider between 1 and 200
-yCount = 11 #integer gui slider between 1 and 200
+xCount = 50 #integer gui slider between 1 and 200
+yCount = 50 #integer gui slider between 1 and 200
 seed = 1 #integer text box - possibility of adding hash functionality
-resolution = 1000 #integer for image width and height
+resolution = 16000 #integer for image width and height
+bitDepth = 8
 #option of adding a black level and a white level
 
 bitmap = perlinNoise(xCount, yCount, seed, resolution)
+
 perlinDone = perf_counter()
+
+output(bitmap, resolution)
 #print("done perlin")
-renderedImage = Image.new('L', (resolution,resolution))
-#L for greyscale, RGB for RGB, HSV for HSV   
 
-allValues = []
-
-for xIterations in range(resolution):
-    for yIterations in range(resolution):        
-        try:
-            pixelValue = int(255*bitmap[xIterations,yIterations])
-            assert pixelValue >= 0 and pixelValue <= 255
-        except:
-            pixelValue = 0
-        allValues.append(pixelValue)
-        renderedImage.putpixel((xIterations,yIterations),pixelValue)
-
-imageRearranging = perf_counter()
-renderedImage.save("Perlin53.png")
-print("done!")
 final = perf_counter()
 
-print(f"Perlin: {round(perlinDone - startTime, 3)}s \nPixel Placing: {round(imageRearranging- perlinDone, 3)}s \nImage Saving: {round(final - imageRearranging, 3)}s \nTotal: {round(final- startTime, 3)}s")
-
-"""
-plt.hist(allValues, bins=np.arange(0, 255))
-plt.show()
-print("done2")
+print(f"Perlin: {round(perlinDone - startTime, 3)}s \nImage Processing: {round(final - perlinDone, 3)}s \nTotal: {round(final- startTime, 3)}s")
 
 
-
-#t1 = perf_counter()
-pointCoords = pointGeneration(xCount, yCount)
-#t2 = perf_counter()
-pointVectors = vectorGeneration(xCount, yCount, seed)
-#t3 = perf_counter()
-#print((t2-t1),"s")
-#print((t3-t2),"s")
-
-xcoords = []
-ycoords = []
-xMags = []
-yMags = []
-
-for x in range(pointCoords.shape[0]):
-    for y in range(pointCoords.shape[1]):
-        xcoords.append(pointCoords[x,y,0])
-        ycoords.append(pointCoords[x,y,1])
-        xMags.append(pointVectors[x,y,0])
-        yMags.append(pointVectors[x,y,1])
-
-
-#print("xvalues", array[0], "\n", "yvalues", array[1] )
-
-plt.scatter(xcoords,ycoords)
-#plt.quiver(xcoords,ycoords, xMags, yMags)
-plt.show()
-"""
