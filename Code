@@ -6,7 +6,6 @@ from numba import cuda
 from PyQt5.QtGui import QPixmap, QImage, qRgb
 from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel
 
-
 import os
 os.environ['NUMBAPRO_LIBDEVICE'] = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\nvvm\libdevice"
 os.environ['NUMBAPRO_NVVM'] = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\nvvm\bin\nvvm64_40_0.dll"
@@ -58,6 +57,96 @@ def vectorGeneration(xCount : int, yCount : int, seed : int):
 
     #return list of cartesian magnitudes [x magnitude, y magnitude]
     return pointVectors
+
+def valueGeneration(xCount : int, yCount : int, seed : int):
+
+    pointValues = np.zeros((xCount,yCount), dtype=float) 
+    #initialise the list
+
+    rng = np.random.default_rng(seed)
+    #seed the random function
+
+    for x in range(xCount):
+        for y in range(yCount):
+            #generate a value between 0 and 1
+
+            pointValues[x,y] = rng.random()
+    
+    return pointValues
+
+def pointGeneration(gridRandomisation, xCount : int, yCount : int, seed : int):
+
+    spacingX = 1 / xCount
+    spacingY = 1 / yCount
+
+    pointCoords = np.zeros((xCount,yCount,2), dtype=float) 
+    #initialise the list
+
+    for x in range(xCount):
+        for y in range(yCount):
+            pointCoords[x,y] = [((x+0.5) * spacingX), ((y+0.5) * spacingY)]
+    #generate X points and duplicate Y times
+    
+    if gridRandomisation == 0:
+        return pointCoords
+
+    rng = np.random.default_rng(seed) # seed the random fucntion
+    
+    #randomise points
+    for x in range(xCount):
+        for y in range(yCount):
+            pointCoords[x,y,0] += ((rng.random() * 2) - 1) * gridRandomisation * spacingX 
+            pointCoords[x,y,1] += ((rng.random() * 2) - 1) * gridRandomisation * spacingY 
+            #multiplying by 2 and subtracting 1 increases the span of the float generator from 0-1 to -1 - 1 
+
+    #iterate through every coordinate and randomise XY
+
+    return pointCoords
+
+def nearestPoint(xPixel : int, yPixel : int, pointCoords, xCount : int, yCount : int, resolution, pointValues):
+
+    #print(pointValues)
+    #nearestPoints uses the 0-1 coordinate system
+    xPosition = xPixel/ resolution
+    yPosition = yPixel / resolution
+    #divide to turn pixel coordinate to grid coordinate
+
+    spacingX = 1 / xCount
+    spacingY = 1 / yCount
+
+    gridX = int(xPosition // spacingX)
+    gridY = int(yPosition // spacingY)
+    #find which box the pixel is in
+    
+    pointDistance = []
+
+    for x in range(-1 , 2):
+        for y in range(-1, 2):
+            try:
+                testX = int(gridX + x)
+                testY = int(gridY + y)
+                #which grid box is being analysed
+
+                point = pointCoords[testX][testY]
+                #find the x and y value of the point within the box
+                value = pointValues[testX][testY]
+                #find the value assigned to it
+
+                xDistance = (point[0] - xPosition)
+                yDistance = (point[1] - yPosition)
+
+                totalDistance = (xDistance * xDistance) + (yDistance * yDistance )#no need to square root it as the distance is comparative
+
+                pointDistance.append([totalDistance, value])
+            except:
+                #print(f"Exception at: {testX}, {testY}")
+                pass
+    
+    
+    #pointDistance.sort()
+    sortedDistances = sorted(pointDistance, key = lambda x : x[0])
+
+    return sortedDistances[0] #returns distance and value of the closest point
 
 def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution, pointVectors):
 
@@ -126,7 +215,7 @@ def pixelCalc(xPixel : int, yPixel : int, xCount : int, yCount : int, resolution
     return finalValue
 
 @cuda.jit
-def GPUpixel(xCount, yCount, resolution, pointVectors, bitmap):
+def GPUPerlinPixel(xCount, yCount, resolution, pointVectors, bitmap):
     xPixel, yPixel = cuda.grid(2)
     #returns the x and y 
     if xPixel < resolution and yPixel < resolution:
@@ -194,7 +283,6 @@ def GPUpixel(xCount, yCount, resolution, pointVectors, bitmap):
 
         bitmap[xPixel, yPixel] = finalValue
 
-
 def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
     #pointCoords = pointGeneration(xCount, yCount)
     #structure [x position, y position]
@@ -225,7 +313,7 @@ def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
         blockWidth = 16
         blockCount = int(resolution/blockWidth) + 1
 
-        GPUpixel[(blockCount, blockCount), (blockWidth, blockWidth)](xCount, yCount, resolution, devicePointVectors, deviceBitmap)
+        GPUPerlinPixel[(blockCount, blockCount), (blockWidth, blockWidth)](xCount, yCount, resolution, devicePointVectors, deviceBitmap)
         cuda.synchronize()
         #wait until the previous function has finished
 
@@ -239,6 +327,37 @@ def perlinNoise(xCount : int, yCount : int, seed : int, resolution : int):
 
     return rescaledBitmap
 
+def voronoiNoise(xCount : int, yCount : int, seed : int, resolution : int, gridRandomisation):
+    pointCoords = pointGeneration(gridRandomisation, xCount, yCount, seed)
+    #structure [x position, y position]
+    pointValues = valueGeneration(xCount, yCount, seed)
+    #structure [value]
+    #print("done 1!")
+    bitmap = np.zeros((resolution,resolution), dtype = float)
+
+    for xPixel in range(resolution):
+        if xPixel % 100 == 0:
+            print(xPixel)
+        for yPixel in range(resolution):
+            
+            #print(f"Pixel: ({xPixel},{yPixel})") #debug print
+
+            closestPoint = nearestPoint(xPixel, yPixel, pointCoords, xCount, yCount, resolution, pointValues)
+
+            value = closestPoint[1]
+
+            #run perlin noise
+            #print(f"Value of pixel: {value}") #debug print
+
+            bitmap[xPixel, yPixel] = value
+
+        #retrieve the gata from the device
+
+    #print(f"Max: {bitmap.max()}\nMin: {bitmap.min()}")
+
+    rescaledBitmap = rescale(bitmap)
+
+    return rescaledBitmap
 
 def output(bitmap, resolution):
     t1 = perf_counter()
@@ -252,9 +371,6 @@ def output(bitmap, resolution):
     t4 = perf_counter()
 
     print(f"1: {round(t2 - t1, 3)}s \n2: {round(t3 - t2, 3)}s \n3: {round(t4 - t3, 3)}s")
-
-
-
 
 startTime = perf_counter()
 xCount = 50 #integer gui slider between 1 and 200
@@ -275,4 +391,10 @@ final = perf_counter()
 
 print(f"Perlin: {round(perlinDone - startTime, 3)}s \nImage Processing: {round(final - perlinDone, 3)}s \nTotal: {round(final- startTime, 3)}s")
 
+
+"""
+plt.hist(allValues, bins=np.arange(0, 255))
+plt.show()
+print("done2")
+"""
 
